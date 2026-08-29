@@ -19,7 +19,10 @@ async def health():
 
 
 @router.get("/api/config")
-async def config(probe: bool = Query(False, description="Make one tiny real call per provider")):
+async def config(
+    probe: bool = Query(False, description="Make one tiny real call per provider"),
+    tools: bool = Query(False, description="Also exercise the tool-calling path the tutor uses"),
+):
     """What the server can actually do right now.
 
     `?probe=1` answers the question the plain response cannot: a key that is
@@ -48,6 +51,8 @@ async def config(probe: bool = Query(False, description="Make one tiny real call
             )
         _last_probe = now
         payload["probe"] = await _probe()
+        if tools:
+            payload["probe_tools"] = await _probe_tools()
 
     return payload
 
@@ -76,4 +81,35 @@ async def _probe() -> dict:
             results[name] = f"ok ({spec.model})"
         except Exception as exc:  # noqa: BLE001 - the message is the whole point
             results[name] = f"FAILED ({spec.model}): {type(exc).__name__}: {str(exc)[:200]}"
+    return results
+
+
+async def _probe_tools() -> dict:
+    """Exercise complete_with_tools with the tutor's real schema.
+
+    A provider whose plain completion works can still fail here - a rejected
+    tool schema, a wire-format mistake - and that failure is invisible to the
+    ordinary probe while making every tutor turn fall back to an error.
+    """
+    from ..tutor.tools import TOOLS
+
+    results = {}
+    for spec in llm.plan("tutor_tools"):
+        provider = llm._providers[spec.provider]  # noqa: SLF001 - diagnostics
+        if not hasattr(provider, "complete_with_tools"):
+            results[spec.key] = "provider has no tool support"
+            continue
+        try:
+            response = await provider.complete_with_tools(
+                model=spec.model,
+                system="You are a maths tutor for a child in class 4. Use your tools.",
+                turns=[Turn(role="user", content="Ich moechte Malpyramiden ueben")],
+                max_tokens=200,
+                tools=TOOLS,
+                spec=spec,
+            )
+            called = [c.name for c in response.tool_calls]
+            results[spec.key] = f"ok - tool_calls={called or 'none'}"
+        except Exception as exc:  # noqa: BLE001 - the message is the whole point
+            results[spec.key] = f"FAILED: {type(exc).__name__}: {str(exc)[:400]}"
     return results
