@@ -79,13 +79,23 @@ class Exercise(Base):
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
     learner_id: Mapped[str] = mapped_column(ForeignKey("learners.id", ondelete="CASCADE"), index=True)
     session_id: Mapped[str | None] = mapped_column(ForeignKey("chat_sessions.id", ondelete="SET NULL"), nullable=True)
+    # One worksheet's worth of tasks share a sheet_id.
+    sheet_id: Mapped[str] = mapped_column(String(32), index=True)
     subject: Mapped[str] = mapped_column(String(20))
     topic_id: Mapped[str] = mapped_column(String(60), index=True)
     difficulty: Mapped[int] = mapped_column(Integer, default=1)
+    kind: Mapped[str] = mapped_column(String(20), default="arith")
+    position: Mapped[int] = mapped_column(Integer, default=0)
     prompt: Mapped[str] = mapped_column(Text)
     answer: Mapped[str] = mapped_column(Text)
+    # [{"id": "a", "answer": "240", "label": "60 · 4"}, ...]
+    blanks: Mapped[list] = mapped_column(JSON, default=list)
     accepted_variants: Mapped[list] = mapped_column(JSON, default=list)
     hints: Mapped[list] = mapped_column(JSON, default=list)
+    # How many hints the child has been given. The ladder is enforced from this
+    # number, not from the model's willingness to hold back.
+    hint_level: Mapped[int] = mapped_column(Integer, default=0)
+    solved: Mapped[bool] = mapped_column(Boolean, default=False)
     # "python" when generated deterministically, otherwise "<provider>:<model>".
     source: Mapped[str] = mapped_column(String(60), default="python")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
@@ -98,6 +108,7 @@ class Attempt(Base):
     exercise_id: Mapped[str] = mapped_column(ForeignKey("exercises.id", ondelete="CASCADE"), index=True)
     learner_id: Mapped[str] = mapped_column(ForeignKey("learners.id", ondelete="CASCADE"), index=True)
     attempt_no: Mapped[int] = mapped_column(Integer, default=1)
+    blank_id: Mapped[str] = mapped_column(String(8), default="a")
     given: Mapped[str] = mapped_column(Text)
     correct: Mapped[bool] = mapped_column(Boolean)
     # How we decided: "exact" | "normalised" | "judge"

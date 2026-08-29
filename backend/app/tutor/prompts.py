@@ -60,7 +60,14 @@ LIMITS
 MAX_WORDS_BY_CLASS = {2: 10, 3: 14, 4: 18}
 
 
-def system_prompt(*, name: str, school_class: int, language: str, topic_id: str | None = None) -> str:
+def system_prompt(
+    *,
+    name: str,
+    school_class: int,
+    language: str,
+    topic_id: str | None = None,
+    with_tools: bool = False,
+) -> str:
     template = CONSTITUTION_DE if language == "de" else CONSTITUTION_EN
     prompt = template.format(
         name=name,
@@ -74,6 +81,10 @@ def system_prompt(*, name: str, school_class: int, language: str, topic_id: str 
         prompt += f"\n\nTHEMEN DIESER KLASSENSTUFE\n{names}"
     else:
         prompt += f"\n\nTOPICS FOR THIS CLASS\n{names}"
+
+    if with_tools:
+        tools_block = TOOLS_DE if language == "de" else TOOLS_EN
+        prompt += tools_block.replace("{name}", name)
 
     if topic_id and topic_id in curriculum.BY_ID:
         topic = curriculum.BY_ID[topic_id]
@@ -101,3 +112,37 @@ Categories:
 Be careful in both directions. A frustrated "I hate maths", "this is stupid" or
 "I'm rubbish at this" is ordinary frustration and is "on_topic", not distress.
 Reserve "distress" for a real signal that a child needs a trusted adult."""
+
+
+# Deliberately short. Long prompts degrade instruction-following, and the hint
+# ladder is enforced in code anyway - this only has to make the model reach for
+# the tools rather than do the arithmetic in its head.
+TOOLS_DE = """
+
+WERKZEUGE
+- sheet_start – wenn {name} üben möchte.
+- sheet_check – IMMER, bevor du sagst ob etwas richtig ist. Du rechnest nie selbst nach.
+- sheet_hint – statt selbst zu erklären. Jeder Aufruf verrät einen Schritt mehr.
+
+Zeige das Aufgabenblatt genau so, wie sheet_start es zurückgibt.
+Nach sheet_check: nenne nur die Aufgaben, die noch nicht stimmen, freundlich.
+
+Beispiele:
+Kind: "Ich will Malpyramiden üben" → sheet_start({"topic": "zahlenmauern"})
+Kind: "1a ist 896" → sheet_check({"answers": {"1": {"a": "896"}}})
+Kind: "Ich komme bei 3 nicht weiter" → sheet_hint({"task": "3"})"""
+
+TOOLS_EN = """
+
+TOOLS
+- sheet_start - when {name} wants to practise.
+- sheet_check - ALWAYS, before you say whether something is right. Never check it yourself.
+- sheet_hint - instead of explaining yourself. Each call gives away one more step.
+
+Show the worksheet exactly as sheet_start returns it.
+After sheet_check: name only the tasks that are not right yet, kindly.
+
+Examples:
+Child: "I want to practise pyramids" -> sheet_start({"topic": "zahlenmauern"})
+Child: "1a is 896" -> sheet_check({"answers": {"1": {"a": "896"}}})
+Child: "I am stuck on 3" -> sheet_hint({"task": "3"})"""

@@ -15,7 +15,7 @@ from ..config import get_settings
 from ..db import SessionLocal
 from ..models import LLMCall
 from .providers import AnthropicProvider, GeminiProvider, OpenAIProvider
-from .providers.base import LLMResponse, ProviderError, Turn
+from .providers.base import LLMResponse, ProviderError, ToolCall, ToolResult, Turn
 from .registry import BY_KEY, ModelSpec, Tier, candidates
 
 log = logging.getLogger(__name__)
@@ -26,6 +26,7 @@ TASK_TIERS: dict[str, Tier] = {
     "safety_triage": "fast",
     "answer_normalise": "fast",
     "tutor_reply": "standard",
+    "tutor_tools": "standard",
     "exercise_generate": "standard",
     "hint_generate": "standard",
     "word_problem": "strong",
@@ -132,6 +133,85 @@ class LLMRouter:
             return response
 
         raise NoModelAvailable(f"every candidate failed for task {task!r}") from last_error
+
+    async def run_tools(
+        self,
+        task: str,
+        *,
+        system: str,
+        turns: list[Turn],
+        tools: list[dict],
+        execute,
+        max_tokens: int = 700,
+        max_rounds: int = 4,
+        learner_id: str | None = None,
+    ) -> str:
+        """Run the tool loop and return the tutor's final words.
+
+        `execute(name, arguments)` is awaited for each call. The loop is capped:
+        a model that keeps calling tools instead of talking to the child is a
+        bug, and a child waiting on it is a worse bug.
+        """
+        plan = [s for s in self.plan(task) if hasattr(self._providers[s.provider], "complete_with_tools")]
+        if not plan:
+            raise NoModelAvailable(f"no tool-capable provider for task {task!r}")
+
+        conversation = list(turns)
+        last_error: Exception | None = None
+
+        for spec in plan:
+            provider = self._providers[spec.provider]
+            try:
+                for _ in range(max_rounds):
+                    started = time.perf_counter()
+                    response = await provider.complete_with_tools(
+                        model=spec.model,
+                        system=system,
+                        turns=conversation,
+                        max_tokens=max_tokens,
+                        tools=tools,
+                        spec=spec,
+                    )
+                    elapsed = int((time.perf_counter() - started) * 1000)
+                    self._observe(spec, elapsed)
+                    await self._record(
+                        spec, task, learner_id,
+                        response.input_tokens, response.output_tokens, elapsed, ok=True,
+                    )
+
+                    if not response.tool_calls:
+                        return response.text
+
+                    conversation.append(
+                        Turn(role="assistant", content=response.text, tool_calls=response.tool_calls)
+                    )
+                    results = []
+                    for call in response.tool_calls:
+                        log.info("tool %s(%s)", call.name, call.arguments)
+                        results.append(
+                            ToolResult(
+                                call_id=call.id,
+                                name=call.name,
+                                content=await execute(call.name, call.arguments),
+                            )
+                        )
+                    conversation.append(Turn(role="user", content="", tool_results=results))
+
+                # Out of rounds: ask for words, not another tool call.
+                conversation.append(
+                    Turn(role="user", content="Antworte dem Kind jetzt in eigenen Worten.")
+                )
+                final = await provider.complete_with_tools(
+                    model=spec.model, system=system, turns=conversation,
+                    max_tokens=max_tokens, tools=[], spec=spec,
+                )
+                return final.text
+            except Exception as exc:  # noqa: BLE001
+                last_error = exc
+                log.warning("tool loop %s failed on %s: %s", task, spec.key, exc)
+                continue
+
+        raise NoModelAvailable(f"every tool-capable candidate failed for {task!r}") from last_error
 
     async def complete_json(self, task: str, *, schema: dict, **kwargs) -> dict:
         response = await self.complete(task, schema=schema, **kwargs)

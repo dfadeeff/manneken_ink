@@ -13,7 +13,7 @@ from ..db import SessionLocal, get_db
 from ..llm import NoModelAvailable, Turn, router as llm
 from ..models import ChatSession, Learner, Message, Parent, SafetyFlag
 from ..schemas import ChatIn, MessageOut, SessionIn, SessionOut
-from ..tutor import guardrails
+from ..tutor import guardrails, tools as tutor_tools
 from ..tutor.prompts import system_prompt
 
 log = logging.getLogger(__name__)
@@ -122,6 +122,12 @@ def _event(payload: dict) -> str:
     return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
+def _chunks(text: str, size: int = 24):
+    """Hand the finished reply to the client in pieces so it still reads as it arrives."""
+    for start in range(0, len(text), size):
+        yield text[start : start + size]
+
+
 async def _generate(text: str, ctx: dict) -> AsyncIterator[str]:
     language = ctx["language"]
 
@@ -149,21 +155,40 @@ async def _generate(text: str, ctx: dict) -> AsyncIterator[str]:
         school_class=ctx["school_class"],
         language=language,
         topic_id=ctx["topic_id"],
+        with_tools=True,
     )
     turns = [Turn(role=role, content=content) for role, content in ctx["history"]]
     turns.append(Turn(role="user", content=guardrails.wrap_child(text, language)))
+
+    # The tutor runs a tool loop: worksheets are generated, marked and hinted by
+    # deterministic Python, never by the model. That means the reply is complete
+    # before we start sending it, so it is chunked to the client afterwards -
+    # correctness here is worth more than time-to-first-token.
+    async def run_tool(name: str, arguments: dict) -> dict:
+        async with SessionLocal() as tool_db:
+            return await tutor_tools.dispatch(
+                name,
+                arguments,
+                db=tool_db,
+                learner_id=ctx["learner_id"],
+                session_id=ctx["session_id"],
+                school_class=ctx["school_class"],
+            )
 
     # Layer 4: nothing reaches the child unfiltered.
     cleaner = guardrails.StreamSanitiser()
     collected: list[str] = []
     try:
-        async for chunk in llm.stream(
-            "tutor_reply",
+        answer = await llm.run_tools(
+            "tutor_tools",
             system=system,
             turns=turns,
-            max_tokens=600,
+            tools=tutor_tools.TOOLS,
+            execute=run_tool,
+            max_tokens=700,
             learner_id=ctx["learner_id"],
-        ):
+        )
+        for chunk in _chunks(answer):
             safe = cleaner.feed(chunk)
             if safe:
                 collected.append(safe)

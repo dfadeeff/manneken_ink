@@ -1,8 +1,9 @@
+import json
 from collections.abc import AsyncIterator
 
 from openai import AsyncOpenAI
 
-from .base import LLMResponse, ProviderError, Turn
+from .base import LLMResponse, ProviderError, ToolCall, Turn
 
 
 class OpenAIProvider:
@@ -76,3 +77,79 @@ class OpenAIProvider:
             if event.usage:
                 usage["input_tokens"] = event.usage.prompt_tokens or 0
                 usage["output_tokens"] = event.usage.completion_tokens or 0
+
+    # -- tool calling --------------------------------------------------------
+
+    def _tool_schema(self, tools: list[dict]) -> list[dict]:
+        return [
+            {
+                "type": "function",
+                "function": {
+                    "name": tool["name"],
+                    "description": tool["description"],
+                    "parameters": tool["parameters"],
+                },
+            }
+            for tool in tools
+        ]
+
+    def _wire_turns(self, system: str, turns: list[Turn]) -> list[dict]:
+        messages: list[dict] = [{"role": "system", "content": system}]
+        for turn in turns:
+            if turn.tool_results:
+                for result in turn.tool_results:
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": result.call_id,
+                            "content": json.dumps(result.content, ensure_ascii=False),
+                        }
+                    )
+                continue
+
+            message: dict = {"role": turn.role, "content": turn.content or None}
+            if turn.tool_calls:
+                message["tool_calls"] = [
+                    {
+                        "id": call.id,
+                        "type": "function",
+                        "function": {
+                            "name": call.name,
+                            "arguments": json.dumps(call.arguments, ensure_ascii=False),
+                        },
+                    }
+                    for call in turn.tool_calls
+                ]
+            messages.append(message)
+        return messages
+
+    async def complete_with_tools(
+        self, *, model, system, turns, max_tokens, tools, spec
+    ) -> LLMResponse:
+        if not self._client:
+            raise ProviderError("openai: no API key configured")
+
+        budget = max(max_tokens * 4, 2048) if spec.reasoning_model else max_tokens
+        response = await self._client.chat.completions.create(
+            model=model,
+            messages=self._wire_turns(system, turns),
+            max_completion_tokens=budget,
+            tools=self._tool_schema(tools),
+        )
+        choice = response.choices[0]
+        calls = [
+            ToolCall(
+                id=call.id,
+                name=call.function.name,
+                # Never string-match serialised arguments; always parse.
+                arguments=json.loads(call.function.arguments or "{}"),
+            )
+            for call in (choice.message.tool_calls or [])
+        ]
+        usage = response.usage
+        return LLMResponse(
+            text=choice.message.content or "",
+            input_tokens=getattr(usage, "prompt_tokens", 0) or 0,
+            output_tokens=getattr(usage, "completion_tokens", 0) or 0,
+            tool_calls=calls,
+        )
