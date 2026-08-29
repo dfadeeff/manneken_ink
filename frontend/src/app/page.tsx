@@ -7,7 +7,7 @@ import Mascot from "@/components/Mascot";
 import PromptBox from "@/components/PromptBox";
 import TopBar from "@/components/TopBar";
 import { useApi } from "@/lib/api";
-import { parkDraft, setActiveSession, takeDraft } from "@/lib/handoff";
+import { parkDraft, setActiveLearner, setActiveSession, takeDraft } from "@/lib/handoff";
 import type { Learner } from "@/lib/types";
 
 export default function Home() {
@@ -25,6 +25,7 @@ export default function Home() {
     async (learner: Learner, text: string) => {
       const session = await api.createSession({ learner_id: learner.id });
       setActiveSession(session.id);
+      setActiveLearner(learner.id);
       parkDraft(text);
       router.push("/tutor");
     },

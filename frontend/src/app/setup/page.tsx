@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import TopBar from "@/components/TopBar";
 import { useApi } from "@/lib/api";
-import { setActiveSession } from "@/lib/handoff";
+import { setActiveLearner, setActiveSession } from "@/lib/handoff";
 
 const CLASSES = [2, 3, 4];
 
@@ -37,6 +37,7 @@ export default function Setup() {
       });
       const session = await api.createSession({ learner_id: learner.id });
       setActiveSession(session.id);
+      setActiveLearner(learner.id);
       router.push("/tutor");
     } catch {
       setError("Das hat nicht geklappt. Bitte noch einmal versuchen.");

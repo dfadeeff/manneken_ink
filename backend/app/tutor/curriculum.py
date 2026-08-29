@@ -30,6 +30,9 @@ TOPICS: list[Topic] = [
     Topic("groessen_laenge", "math", "Längen und Gewichte", "Lengths and weights", (3, 4)),
     Topic("geometrie", "math", "Formen und Symmetrie", "Shapes and symmetry", (2, 3, 4)),
     Topic("sachaufgaben", "math", "Sachaufgaben", "Word problems", (2, 3, 4)),
+    # Formats taken from real Grundschule worksheets - see exercises/FORMATS.md.
+    Topic("rechentabellen", "math", "Rechentabellen", "Operation grids", (2, 3, 4)),
+    Topic("zahlenmauern", "math", "Zahlenmauern und Malpyramiden", "Number pyramids", (3, 4)),
     # --- Deutsch ---
     Topic("rechtschreibung", "german", "Rechtschreibung", "Spelling", (2, 3, 4)),
     Topic("gross_klein", "german", "Groß- und Kleinschreibung", "Capitalisation", (2, 3, 4)),

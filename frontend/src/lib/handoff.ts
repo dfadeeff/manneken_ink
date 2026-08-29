@@ -6,6 +6,7 @@
 
 const DRAFT = "mika:draft";
 const SESSION = "mika:session";
+const LEARNER = "mika:learner";
 
 function store(): Storage | null {
   return typeof window === "undefined" ? null : window.sessionStorage;
@@ -31,4 +32,12 @@ export function setActiveSession(sessionId: string) {
 
 export function getActiveSession(): string | null {
   return store()?.getItem(SESSION) ?? null;
+}
+
+export function setActiveLearner(learnerId: string) {
+  store()?.setItem(LEARNER, learnerId);
+}
+
+export function getActiveLearner(): string | null {
+  return store()?.getItem(LEARNER) ?? null;
 }

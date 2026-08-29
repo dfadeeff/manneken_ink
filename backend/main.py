@@ -12,6 +12,7 @@ from app.config import get_settings  # noqa: E402
 from app.routes.chat import router as chat_router  # noqa: E402
 from app.routes.learners import router as learners_router  # noqa: E402
 from app.routes.meta import router as meta_router  # noqa: E402
+from app.routes.speech import router as speech_router  # noqa: E402
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("manneken")
@@ -45,3 +46,4 @@ app.add_middleware(
 app.include_router(meta_router)
 app.include_router(learners_router)
 app.include_router(chat_router)
+app.include_router(speech_router)

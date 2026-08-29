@@ -50,6 +50,20 @@ async def create_session(
     return session
 
 
+@router.get("/sessions/{session_id}", response_model=SessionOut)
+async def get_session(
+    session_id: str,
+    parent: Parent = Depends(current_parent),
+    db: AsyncSession = Depends(get_db),
+):
+    """The session is the source of truth for which learner is practising.
+
+    sessionStorage is fine for handing a draft across the sign-in redirect, but
+    it is empty in a new tab, so nothing load-bearing should depend on it.
+    """
+    return await _owned_session(session_id, parent, db)
+
+
 @router.get("/sessions/{session_id}/messages", response_model=list[MessageOut])
 async def session_messages(
     session_id: str,
@@ -115,18 +129,18 @@ async def _generate(text: str, ctx: dict) -> AsyncIterator[str]:
     limited = limiter.check(ctx["learner_id"])
     if limited:
         reply = RATE_LIMIT_TEXT[limited][language]
-        await _persist(ctx, text, reply, intercepted=True)
+        message_id = await _persist(ctx, text, reply, intercepted=True)
         yield _event({"type": "delta", "text": reply})
-        yield _event({"type": "done", "intercepted": True})
+        yield _event({"type": "done", "intercepted": True, "message_id": message_id})
         return
 
     # Layer 2: triage. Distress and unsafe never reach the tutor model.
     category = await guardrails.triage(text, learner_id=ctx["learner_id"])
     if category in ("distress", "unsafe"):
         reply = guardrails.SAFE_REPLY[category][language]
-        await _persist(ctx, text, reply, intercepted=True, flag=(category, text))
+        message_id = await _persist(ctx, text, reply, intercepted=True, flag=(category, text))
         yield _event({"type": "delta", "text": reply})
-        yield _event({"type": "done", "intercepted": True})
+        yield _event({"type": "done", "intercepted": True, "message_id": message_id})
         return
 
     # Layers 3 and 5: constitution, plus child input fenced as data.
@@ -156,9 +170,9 @@ async def _generate(text: str, ctx: dict) -> AsyncIterator[str]:
                 yield _event({"type": "delta", "text": safe})
     except NoModelAvailable:
         fallback = guardrails.SAFE_REPLY["off_topic"][language]
-        await _persist(ctx, text, fallback, intercepted=True)
+        message_id = await _persist(ctx, text, fallback, intercepted=True)
         yield _event({"type": "delta", "text": fallback})
-        yield _event({"type": "done", "intercepted": True})
+        yield _event({"type": "done", "intercepted": True, "message_id": message_id})
         return
     except Exception:  # noqa: BLE001
         log.exception("tutor stream failed")
@@ -182,21 +196,20 @@ async def _generate(text: str, ctx: dict) -> AsyncIterator[str]:
     if issues:
         log.info("output issues for learner %s: %s", ctx["learner_id"], issues)
 
-    await _persist(ctx, text, reply, intercepted=False)
-    yield _event({"type": "done", "intercepted": False, "issues": issues})
+    message_id = await _persist(ctx, text, reply, intercepted=False)
+    yield _event({"type": "done", "intercepted": False, "issues": issues, "message_id": message_id})
 
 
-async def _persist(ctx, child_text, reply, *, intercepted, flag=None) -> None:
+async def _persist(ctx, child_text, reply, *, intercepted, flag=None) -> str:
     async with SessionLocal() as db:
         db.add(Message(session_id=ctx["session_id"], role="user", content=child_text))
-        db.add(
-            Message(
-                session_id=ctx["session_id"],
-                role="assistant",
-                content=reply,
-                intercepted=intercepted,
-            )
+        assistant = Message(
+            session_id=ctx["session_id"],
+            role="assistant",
+            content=reply,
+            intercepted=intercepted,
         )
+        db.add(assistant)
         if flag:
             category, excerpt = flag
             db.add(
@@ -208,6 +221,7 @@ async def _persist(ctx, child_text, reply, *, intercepted, flag=None) -> None:
                 )
             )
         await db.commit()
+        return assistant.id
 
 
 async def _owned_session(session_id: str, parent: Parent, db: AsyncSession) -> ChatSession:

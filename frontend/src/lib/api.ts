@@ -49,14 +49,48 @@ export function useApi() {
           body: JSON.stringify(body),
         }),
 
+      session: (sessionId: string) => request<TutorSession>(`/api/chat/sessions/${sessionId}`),
+
       messages: (sessionId: string) =>
         request<ChatMessage[]>(`/api/chat/sessions/${sessionId}/messages`),
+
+      speechStatus: () => request<{ transcribe: boolean; speak: boolean }>("/api/speech/status"),
+
+      transcribe: async (learnerId: string, audio: Blob): Promise<string> => {
+        const token = await getToken();
+        const form = new FormData();
+        form.append("learner_id", learnerId);
+        form.append("file", audio, "aufnahme.webm");
+        const response = await fetch(`${API}/api/speech/transcribe`, {
+          method: "POST",
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          body: form,
+        });
+        if (!response.ok) throw new ApiError(response.status, "transcribe failed");
+        return (await response.json()).text as string;
+      },
+
+      /** Mika only voices her own stored replies, so this takes an id, not text. */
+      speechUrl: async (messageId: string): Promise<string> => {
+        const token = await getToken();
+        const response = await fetch(`${API}/api/speech/speak`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({ message_id: messageId }),
+        });
+        if (!response.ok) throw new ApiError(response.status, "speech failed");
+        return URL.createObjectURL(await response.blob());
+      },
 
       /** Streams the tutor's reply, calling onDelta for each safe chunk. */
       streamReply: async (
         sessionId: string,
         message: string,
         onDelta: (text: string) => void,
+        onDone?: (messageId: string | null) => void,
       ): Promise<void> => {
         const token = await getToken();
         const response = await fetch(`${API}/api/chat/stream`, {
@@ -88,6 +122,7 @@ export function useApi() {
             if (!line) continue;
             const event = JSON.parse(line.slice(6));
             if (event.type === "delta") onDelta(event.text);
+            if (event.type === "done") onDone?.(event.message_id ?? null);
           }
         }
       },
