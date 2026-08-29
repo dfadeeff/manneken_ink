@@ -194,10 +194,17 @@ async def _generate(text: str, ctx: dict) -> AsyncIterator[str]:
                 collected.append(safe)
                 yield _event({"type": "delta", "text": safe})
     except NoModelAvailable:
-        fallback = guardrails.SAFE_REPLY["off_topic"][language]
-        message_id = await _persist(ctx, text, fallback, intercepted=True)
-        yield _event({"type": "delta", "text": fallback})
-        yield _event({"type": "done", "intercepted": True, "message_id": message_id})
+        log.error("no model could answer for learner %s", ctx["learner_id"], exc_info=True)
+        outage = (
+            "Ich kann dir gerade leider nicht antworten. Das liegt an mir, nicht an dir. "
+            "Bitte sag einem Erwachsenen Bescheid und versuch es später nochmal."
+            if language == "de"
+            else "I cannot answer right now. That is my fault, not yours. "
+            "Please tell a grown-up and try again later."
+        )
+        message_id = await _persist(ctx, text, outage, intercepted=True)
+        yield _event({"type": "delta", "text": outage})
+        yield _event({"type": "done", "intercepted": True, "message_id": message_id, "error": "no_model"})
         return
     except Exception:  # noqa: BLE001
         log.exception("tutor stream failed")
