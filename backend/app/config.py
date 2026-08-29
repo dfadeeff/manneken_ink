@@ -31,6 +31,21 @@ class Settings(BaseSettings):
     messages_per_day: int = 400
 
     @model_validator(mode="after")
+    def _async_database_url(self):
+        """Railway (and Heroku, and Supabase) inject a sync `postgresql://` URL.
+
+        SQLAlchemy's async engine needs an async driver, and the failure is a
+        confusing one at boot rather than an obvious one, so normalise it here.
+        """
+        url = self.database_url
+        if url.startswith("postgres://"):
+            url = url.replace("postgres://", "postgresql://", 1)
+        if url.startswith("postgresql://"):
+            url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        object.__setattr__(self, "database_url", url)
+        return self
+
+    @model_validator(mode="after")
     def _guard_dev_bypass(self):
         if self.dev_auth_bypass and self.environment != "development":
             raise ValueError("DEV_AUTH_BYPASS is only allowed when ENVIRONMENT=development")
