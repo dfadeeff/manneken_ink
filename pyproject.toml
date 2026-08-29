@@ -1,5 +1,8 @@
+# The deployable Python app is backend/, which uses requirements.txt.
+# Railway's root directory for the backend service must be set to "backend".
+# This file exists only so tooling at the repo root has something to read.
 [project]
 name = "manneken"
-version = "0.1.0"
-requires-python = ">=3.13"
+version = "0.2.0"
+requires-python = ">=3.11"
 dependencies = []
