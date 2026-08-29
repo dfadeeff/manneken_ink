@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { ClerkProvider } from "@clerk/nextjs";
+import { deDE } from "@clerk/localizations";
 import { Inter, Newsreader } from "next/font/google";
 import "./globals.css";
 
@@ -19,7 +20,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="de" className={`${inter.variable} ${newsreader.variable} h-full`}>
       <body className="min-h-full font-sans">
-        <ClerkProvider afterSignOutUrl="/">{children}</ClerkProvider>
+        {/* The parent signs in, but they are signing into a German product. */}
+        <ClerkProvider localization={deDE} afterSignOutUrl="/">
+          {children}
+        </ClerkProvider>
       </body>
     </html>
   );

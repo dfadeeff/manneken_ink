@@ -10,5 +10,7 @@ export const config = {
     // this is Next's own documented exclusion pattern instead.
     "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|woff2?|ttf|css|js)$).*)",
     "/(api|trpc)(.*)",
+    // Clerk's auto-proxy path; required, and must come after the API matcher.
+    "/__clerk/:path*",
   ],
 };
