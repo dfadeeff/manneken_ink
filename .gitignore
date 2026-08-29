@@ -15,8 +15,9 @@ out/
 
 # Environment
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
+!.env.local.example
 
 # OS
 .DS_Store
@@ -27,3 +28,5 @@ next-env.d.ts
 
 # Vercel
 .vercel
+# Local dev database
+*.db

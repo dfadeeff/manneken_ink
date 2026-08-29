@@ -1,49 +1,53 @@
 #!/bin/bash
 set -e
 
-echo "=============================="
-echo "  Manneken - Dress Up & Chat  "
-echo "=============================="
+echo "=================================="
+echo "  Mika - Lernbegleiter (dev)"
+echo "=================================="
 
-# Check for .env
 if [ ! -f backend/.env ]; then
   echo ""
-  echo "ERROR: backend/.env not found!"
-  echo "Create it with your OpenAI API key:"
-  echo "  echo 'OPENAI_API_KEY=sk-your-key' > backend/.env"
+  echo "ERROR: backend/.env not found. Start from the template:"
+  echo "  cp backend/.env.example backend/.env"
   echo ""
   exit 1
 fi
 
-# Backend setup
-echo ""
-echo "[1/3] Setting up Python backend..."
-cd backend
-if [ ! -d venv ]; then
-  python3 -m venv venv
+if [ ! -f frontend/.env.local ]; then
+  echo ""
+  echo "ERROR: frontend/.env.local not found. Start from the template:"
+  echo "  cp frontend/.env.local.example frontend/.env.local"
+  echo ""
+  exit 1
 fi
+
+echo ""
+echo "[1/4] Python environment..."
+cd backend
+[ -d venv ] || python3 -m venv venv
 source venv/bin/activate
 pip install -q -r requirements.txt
 
-echo ""
-echo "[2/3] Starting backend on http://localhost:8000 ..."
+echo "[2/4] Database migrations..."
+alembic upgrade head
+
+echo "[3/4] Backend on http://localhost:8000 ..."
 uvicorn main:app --reload --port 8000 &
 BACKEND_PID=$!
 cd ..
 
-# Frontend setup
-echo ""
-echo "[3/3] Starting frontend on http://localhost:3000 ..."
+echo "[4/4] Frontend on http://localhost:3000 ..."
 cd frontend
+[ -d node_modules ] || npm install
 npm run dev &
 FRONTEND_PID=$!
 cd ..
 
 echo ""
-echo "================================"
+echo "=================================="
 echo "  Open http://localhost:3000"
-echo "  Press Ctrl+C to stop both"
-echo "================================"
+echo "  Ctrl+C stops both"
+echo "=================================="
 
 trap "kill $BACKEND_PID $FRONTEND_PID 2>/dev/null; exit" SIGINT SIGTERM
 wait
