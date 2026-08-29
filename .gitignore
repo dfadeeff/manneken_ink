@@ -15,8 +15,9 @@ out/
 
 # Environment
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
+!.env.local.example
 
 # OS
 .DS_Store
